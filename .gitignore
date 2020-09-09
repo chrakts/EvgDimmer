@@ -35,3 +35,11 @@
 *.layout
 *.depend
 -ffunction-sections
+*.eep
+*.elf
+*.fuse
+*.hex
+*.lock
+*.lss
+*.map
+*.sig
