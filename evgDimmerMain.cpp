@@ -8,8 +8,12 @@ int main(void)
 {
   char  job,function,address;
   char  command[23];
+  uint8_t resetStatus;
 
-    // Insert code
+  resetStatus = RST.STATUS;
+  RST.STATUS = 0xff;
+  WDT_EnableAndSetTimeout(WDT_SHORT);
+  WDT_Reset();
   init_clock(SYSCLK, PLL,true,CLOCK_CALIBRATION);
 
  	PORTA_DIRSET = PIN2_bm | PIN3_bm;
@@ -17,63 +21,75 @@ int main(void)
 
 	PORTB_DIRCLR = 0xff;
 
-	PORTC_DIRSET = 0xff;
+	PORTC_DIRSET    = 0xff;
+	PORTC_OUTSET = 0xff;
 
 	PORTD_DIRSET = PIN0_bm | PIN1_bm | PIN3_bm | PIN4_bm | PIN5_bm | PIN7_bm;
 	PORTD_DIRCLR = PIN2_bm | PIN6_bm;
 	PORTD_OUTCLR = PIN0_bm | PIN1_bm | PIN4_bm | PIN5_bm;
 
 	PORTE_DIRSET = 0xff;
-	PORTE.OUTSET = 1;
+	PORTE_OUTSET = 1;
   LEDROTSETUP;
   LEDGRUENSETUP;
 
+  LEDROT_ON;
+  LEDGRUEN_ON;
 
-  _delay_ms(1000);
   init_mytimer();
   rc5_init();
+
+  WDT_Reset();
 
   SPI_Master_t spiRFM69;
   SPI_MasterInit(&spiRFM69,&(SPID),&(PORTD),false,SPI_MODE_0_gc,SPI_INTLVL_LO_gc,false,SPI_PRESCALER_DIV128_gc);
 
   RFM69 myRFM(&MyTimers[RFM69_TIMER],&spiRFM69,true);
   globRFM = &myRFM;
+  WDT_Reset();
 
   PMIC_CTRL = PMIC_LOLVLEX_bm | PMIC_HILVLEN_bm | PMIC_MEDLVLEN_bm;
 
   sei();
   LEDROT_ON;
   debug.open(Serial::BAUD_57600,F_CPU);
-  debug.print("\nHallo vom rc5-32 Empfaenger");
+  debug.println("Hallo vom rc5-32 Empfaenger");
+  debug.pformat("Reset-Status: %x",resetStatus);
   initStatus();
   myRFM.initialize(86,myID,NETWORK);
   myRFM.encrypt(RFM69Key);
+  WDT_Reset();
 
-  debug.print("\nRFM-Init fertig\n");
+  debug.println("RFM-Init fertig\n");
   LEDROT_OFF;
-
+  initPWM();
   nextSendReady=true;
+
   while(1)
   {
+    WDT_Reset();
+    // setzt Lampenausgänge und Dimmer-PWMs auf die aktuellen Werte
+    updateHardware();
+    // Neuer IR-Befehl ?
     if( IR_Remote > 0)
     {
       interpreteKey();
     }
+    // regelmäßiges unbedingtes Update über Funk
     if(nextSendReady)
     {
-      LEDROT_TOGGLE;
       sendStatus(nextStatus2Send);
       nextSendReady = false;
     }
+    // bei Änderung wird das Update gesendet über Funk
     if(nextUpdateReady)
     {
       nextUpdateReady=false;
       updateStatus();
     }
-    //check for any received packets
+    // neuer Funk-Befehl?
     if (myRFM.receiveDone())
     {
-      LEDROT_ON;
       debug.pformat("[%d]-[%d]-[RX_RSSI: %d]:",myRFM.SENDERID,myRFM.DATALEN,myRFM.RSSI);
       debug.print((char *)myRFM.DATA);
 
@@ -85,12 +101,10 @@ int main(void)
       if( interpreteData((char *)myRFM.DATA,&function,&address,&job,command) )
       {
         if(command != NULL)
-          doJob(function,address,job,command);
+           doJob(function,address,job,command);
       }
       else
         debug.print("Fehler\n");
-
-      LEDROT_OFF;
     }
 
   }
@@ -117,6 +131,22 @@ void doJob(char function,char address, char job, char *command)
     break;
   }
 
+}
+
+void startSpecial(uint8_t state)
+{
+  jobState=state;
+	MyTimers[LED_BLINK_TIMER].restart = RESTART_YES;
+	MyTimers[LED_BLINK_TIMER].state = TM_START;
+	MyTimers[STATUS_SPECIAL_TIMER].state = TM_START;
+}
+
+void stopSpecial(void)
+{
+  jobState=JOB_NORMAL;
+	MyTimers[LED_BLINK_TIMER].restart = RESTART_NO;
+	MyTimers[LED_BLINK_TIMER].state = TM_STOP;
+	LEDROT_OFF;
 }
 
 // R1XXSL0wToff
@@ -180,10 +210,18 @@ void interpreteKey()
       actualStatus.lamps = 0;
     break;
     case T_PLAY:			/* Taste PLAY */
-      jobState = JOB_CHOICE;
+      startSpecial(JOB_CHOICE);
     break;
     case T_STOP:			/* Taste Stop -> nimmt auf */
-      jobState = JOB_PROGRAMM;
+    case T_PROG_MENU:
+      startSpecial(JOB_PROGRAMM);
+    break;
+    case T_OK:
+      /* ************************************************************************* */
+      /* ******************* Löst absichtlich Watchdog-Reset aus ***************** */
+      /* ************************************************************************* */
+      while(1);
+      stopSpecial();
     break;
     case T_LETZTER:
       jobState = JOB_NORMAL;
@@ -192,95 +230,89 @@ void interpreteKey()
       jobState = JOB_NORMAL;
     break;
     case T_KANAL_P: // Kanal 0 dimmen
-      increaseDimmer(0);
-    break;
-    case T_KANAL_M:
-      decreaseDimmer(0);
-    break;
-    case T_FF:   // Kanal 1 dimmen
       increaseDimmer(1);
     break;
-    case T_REW:
+    case T_KANAL_M:
       decreaseDimmer(1);
     break;
-/*    case T_START_PL:
-      if( (PORTC & 0b00000010)==0 )    // Dimmen, nur wenn eingeschaltet
+    case T_FF:   // Kanal 1 dimmen
+      increaseDimmer(0);
+    break;
+    case T_REW:
+      decreaseDimmer(0);
+    break;
+    // Dimmer 0 maximale Helligkeit
+    case T_START_PL:
+      if( actualStatus.lamps & 0x01 )    // Dimmen, nur wenn eingeschaltet
       {
-        if( job == JOB_PROGRAMM )
-        {
-          eeprom_write_byte ( (uint8_t *) (DIMMER2_START_PL), Dim[1] );
-        }
+        if( jobState == JOB_PROGRAMM )
+          eeprom_write_byte ( &(dimmerMax[0]), actualStatus.dimmer[0] );
         else
-        {
-          Dim[1] = eeprom_read_byte ( (uint8_t *) (DIMMER2_START_PL) );
-          DIMMER_2 = Dim[1];
-        }
+          actualStatus.dimmer[0] = eeprom_read_byte ( &(dimmerMax[0]) );
       }
       Taste_Neu = false;
-      job = JOB_NORMAL;
+      jobState = JOB_NORMAL;
     break;
+    // Dimmer 0 mimimale Helligkeit
     case T_START_MI:
-      if( (PORTC & 0b00000010)==0 )    // Dimmen, nur wenn eingeschaltet
+      if( actualStatus.lamps & 0x01 )    // Dimmen, nur wenn eingeschaltet
       {
-        if( job == JOB_PROGRAMM )
-        {
-          eeprom_write_byte ( (uint8_t *) (DIMMER2_START_MI), Dim[1] );
-        }
+        if( jobState == JOB_PROGRAMM )
+          eeprom_write_byte ( &(dimmerMin[0]), actualStatus.dimmer[0] );
         else
-        {
-          Dim[1] = eeprom_read_byte ( (uint8_t *) (DIMMER2_START_MI) );
-          DIMMER_2 = Dim[1];
-        }
+          actualStatus.dimmer[0] = eeprom_read_byte ( &(dimmerMin[0]) );
       }
       Taste_Neu = false;
-      job = JOB_NORMAL;
+      jobState = JOB_NORMAL;
     break;
+    // Dimmer 1 maximale Helligkeit
     case T_STOP_PL:
-      if( (PORTC & 0b00000100)==0 )    // Dimmen, nur wenn eingeschaltet
+      if( actualStatus.lamps & 0x02 )    // Dimmen, nur wenn eingeschaltet
       {
-        if( job == JOB_PROGRAMM )
-        {
-          eeprom_write_byte ( (uint8_t *) (DIMMER3_STOP_PL), Dim[2] );
-        }
+        if( jobState == JOB_PROGRAMM )
+          eeprom_write_byte ( &(dimmerMax[1]), actualStatus.dimmer[1] );
         else
-        {
-          Dim[2] = eeprom_read_byte ( (uint8_t *) (DIMMER3_STOP_PL) );
-          DIMMER_3 = Dim[2];
-        }
+          actualStatus.dimmer[1] = eeprom_read_byte ( &(dimmerMax[1]) );
       }
       Taste_Neu = false;
-      job = JOB_NORMAL;
+      jobState = JOB_NORMAL;
     break;
+    // Dimmer 1 mimimale Helligkeit
     case T_STOP_MI:
-      if( (PORTC & 0b00000100)==0 )    // Dimmen, nur wenn eingeschaltet
+      if( actualStatus.lamps & 0x02 )    // Dimmen, nur wenn eingeschaltet
       {
-        if( job == JOB_PROGRAMM )
-        {
-          eeprom_write_byte ( (uint8_t *) (DIMMER3_STOP_MI), Dim[2] );
-        }
+        if( jobState == JOB_PROGRAMM )
+          eeprom_write_byte ( &(dimmerMin[1]), actualStatus.dimmer[1] );
         else
-        {
-          Dim[2] = eeprom_read_byte ( (uint8_t *) (DIMMER3_STOP_MI) );
-          DIMMER_3 = Dim[2];
-        }
+          actualStatus.dimmer[1] = eeprom_read_byte ( &(dimmerMin[1]) );
       }
       Taste_Neu = false;
-      job = JOB_NORMAL;
+      jobState = JOB_NORMAL;
     break;
+    // Kanal 1 aufdimmen
     case T_DATE_PL:
-      Dim[1]=eeprom_read_byte ( (uint8_t *) (DIMMER2_START_PL) );
-      Dim[2]=eeprom_read_byte ( (uint8_t *) (DIMMER3_STOP_PL) );
-      DIMMER_2 = Dim[1];
-      DIMMER_3 = Dim[2];
+      increaseDimmer(0);
     break;
+    // Kanal 1 abdimmen
     case T_DATE_MI:
-      Dim[1]=eeprom_read_byte ( (uint8_t *) (DIMMER2_START_MI) );
-      Dim[2]=eeprom_read_byte ( (uint8_t *) (DIMMER3_STOP_MI) );
-      DIMMER_2 = Dim[1];
-      DIMMER_3 = Dim[2];
-    break;*/
+      decreaseDimmer(0);
+    break;
+    default:
+      debug.pformat("unbelegte Taste: %d\n",IR_Remote);
+    //break;
   }
   IR_Remote = 0;
+}
+
+void initPWM()
+{
+  TCC0.CTRLA = TC_CLKSEL_DIV64_gc;  // Teiler auf 64
+  TCC0.CTRLB = TC0_CCDEN_bm | TC0_CCBEN_bm | TC0_CCCEN_bm | TC_WGMODE_SINGLESLOPE_gc; // single-Slope auf 3 Kanälen
+  TCC0.CTRLE = TC_BYTEM_BYTEMODE_gc; // Splitmode
+  TCC0.PERL  = 254;
+  TCC0.CCBL  = 128;
+  TCC0.CCCL  = 128;
+  TCC0.CCDL  = 128;
 }
 
 void NummernTaste( char Taste )
@@ -292,43 +324,67 @@ void NummernTaste( char Taste )
 			{
         LEDGRUEN_TOGGLE;
 				actualStatus.lamps ^=  (0b00000001<<Taste);
-				Taste_Neu = false;
 			}
 			else
 			{
 				if( (Taste_Neu == true) && (Taste < 10) )
 				{
-/*					PORTC = eeprom_read_byte ( (uint8_t *) (4*Taste) );
-					Dim[0]  = eeprom_read_byte ( (uint8_t *) (4*Taste+1) );
-					Dim[1]  = eeprom_read_byte ( (uint8_t *) (4*Taste+2) );
-					Dim[2]  = eeprom_read_byte ( (uint8_t *) (4*Taste+3) );
-					DIMMER_2 =  Dim[1];
-					DIMMER_3 =  Dim[2];
-					Taste_Neu = false;*/
-					jobState = JOB_NORMAL;
+          if(getStatusFromEEProm(&actualStatus,Taste)==true)
+          {
+            debug.println("Lade EEPROM");
+          }
+          else
+          {
+            debug.println("Lade EEPROM fehlgeschlagen");
+          }
+          printStatus();
 				}
 			}
-			IR_Remote = 0;
 		break;
 		case JOB_CHOICE:
-/*			PORTC = eeprom_read_byte ( (uint8_t *) (4*Taste) );
-			Dim[0]  = eeprom_read_byte ( (uint8_t *) (4*Taste+1) );
-			Dim[1]  = eeprom_read_byte ( (uint8_t *) (4*Taste+2) );
-			Dim[2]  = eeprom_read_byte ( (uint8_t *) (4*Taste+3) );
-			DIMMER_2 =  Dim[1];
-			DIMMER_3 =  Dim[2];
-			Taste_Neu = false;*/
-			jobState = JOB_NORMAL;
+      if(getStatusFromEEProm(&actualStatus,Taste)==true)
+      {
+        debug.println("Lade EEPROM");
+      }
+      else
+      {
+        debug.println("Lade EEPROM fehlgeschlagen");
+      }
+      printStatus();
+			stopSpecial();
 		break;
 		case JOB_PROGRAMM:
-/*			eeprom_write_byte ( (uint8_t *) (4*Taste), PORTC );
-			eeprom_write_byte ( (uint8_t *) (4*Taste+1), Dim[0] );
-			eeprom_write_byte ( (uint8_t *) (4*Taste+2), Dim[1] );
-			eeprom_write_byte ( (uint8_t *) (4*Taste+3), Dim[2] );
-			Taste_Neu = false;*/
-			jobState = JOB_NORMAL;
+      setStatusToEEProm(&actualStatus,Taste);
+      debug.println("Speichere ins EEPROM");
+			stopSpecial();
 		break;
 	}
+  Taste_Neu = false;
+  IR_Remote = 0;
+
+}
+
+void updateHardware()
+{
+  uint8_t i,test;
+
+  for(i=0;i<4;i++)
+  {
+    if( actualStatus.lamps & (1<<i) )
+      PORTC.OUTCLR = LAMP_MAP[i];
+    else
+      PORTC.OUTSET = LAMP_MAP[i];
+  }
+
+/*
+  PORTC_DIR = 0xff;
+  test = actualStatus.lamps<<4;
+  PORTC_OUT = test | 0b11101111;
+*/
+
+  TCC0.CCDL = 255-actualStatus.dimmer[0];
+  TCC0.CCCL = 255-actualStatus.dimmer[1];
+  TCC0.CCBL = 255-actualStatus.dimmer[2];
 }
 
 void updateStatus()
@@ -363,13 +419,13 @@ void sendStatus(uint8_t type)
           else
             strcat(toSend,"off");
 
-          globRFM->sendWithRetry('T', toSend, 15, 10, 100);
+          globRFM->sendWithRetry('T', toSend, 15, 4, 20);
           debug.println(toSend);
 
         break;
         case 4 ... 6:
           sprintf(toSend,"BRK1SD%dST%d",type-4,actualStatus.dimmer[type-4]);
-          globRFM->sendWithRetry('T', toSend, 15, 10, 100);
+          globRFM->sendWithRetry('T', toSend, 15, 4, 20);
           debug.println(toSend);
         break;
         default:
@@ -476,9 +532,9 @@ void initStatus()
 
 void printStatus()
 {
-  debug.pformat("\nStatus: %d - %d %d %d",actualStatus.lamps,actualStatus.dimmer[0],actualStatus.dimmer[1],actualStatus.dimmer[2]);
-  debug.pformat("\n      :     - %d %d %d",actualStatus.minDimmer[0],actualStatus.minDimmer[1],actualStatus.minDimmer[2]);
-  debug.pformat("\n      :     - %d %d %d",actualStatus.maxDimmer[0],actualStatus.maxDimmer[1],actualStatus.maxDimmer[2]);
+  debug.pformat("Status: %d - %d %d %d\n",actualStatus.lamps,actualStatus.dimmer[0],actualStatus.dimmer[1],actualStatus.dimmer[2]);
+/*  debug.pformat("\n      :     - %d %d %d",actualStatus.minDimmer[0],actualStatus.minDimmer[1],actualStatus.minDimmer[2]);
+  debug.pformat("\n      :     - %d %d %d",actualStatus.maxDimmer[0],actualStatus.maxDimmer[1],actualStatus.maxDimmer[2]);*/
 }
 
 uint8_t getChecksum(LAMP_STATUS *toTest)
@@ -486,10 +542,10 @@ uint8_t getChecksum(LAMP_STATUS *toTest)
   uint8_t s = toTest->lamps;
   for(uint8_t i=0;i<3;i++)
     s += toTest->dimmer[i];
-  for(uint8_t i=0;i<3;i++)
+/*  for(uint8_t i=0;i<3;i++)
     s += toTest->minDimmer[i];
   for(uint8_t i=0;i<3;i++)
-    s += toTest->maxDimmer[i];
+    s += toTest->maxDimmer[i];*/
   return(!s);
 }
 
@@ -510,28 +566,32 @@ void setChecksum(LAMP_STATUS *toTest)
 
 bool getStatusFromEEProm(LAMP_STATUS *toSet,uint8_t sceneNum)
 {
-  toSet->lamps = eeprom_read_byte(&(saveStatus[sceneNum].lamps));
+  LAMP_STATUS tempStatus;
+
+  tempStatus.lamps = eeprom_read_byte(&(saveStatus[sceneNum].lamps));
   for(uint8_t i=0;i<3;i++)
-    toSet->dimmer[i] = eeprom_read_byte( &(saveStatus[sceneNum].dimmer[i]) );
-  for(uint8_t i=0;i<3;i++)
-    toSet->minDimmer[i] = eeprom_read_byte( &(saveStatus[sceneNum].minDimmer[i]) );
-  for(uint8_t i=0;i<3;i++)
-    toSet->maxDimmer[i] = eeprom_read_byte( &(saveStatus[sceneNum].maxDimmer[i]) );
-  toSet->checksum = eeprom_read_byte( &(saveStatus[sceneNum].checksum) );
-  return(proveChecksum(toSet));
+    tempStatus.dimmer[i] = eeprom_read_byte( &(saveStatus[sceneNum].dimmer[i]) );
+  tempStatus.checksum = eeprom_read_byte( &(saveStatus[sceneNum].checksum) );
+
+  if( proveChecksum(&tempStatus) )
+  {
+    toSet->lamps = tempStatus.lamps;
+    for(uint8_t i=0;i<3;i++)
+      toSet->dimmer[i] = tempStatus.dimmer[i];
+    return( true );
+
+  }
+  else
+    return(false);
 }
 
 void setStatusToEEProm(LAMP_STATUS *toSet,uint8_t sceneNum)
 {
 uint8_t i;
-  debug.print("\nSichere Status");
+  debug.println("Sichere Status");
   eeprom_write_byte(&(saveStatus[sceneNum].lamps),toSet->lamps );
   for(i=0;i<3;i++)
     eeprom_write_byte( &(saveStatus[sceneNum].dimmer[i]) ,toSet->dimmer[i]);
-  for(i=0;i<3;i++)
-    eeprom_write_byte( &(saveStatus[sceneNum].minDimmer[i]) ,toSet->minDimmer[i]);
-  for(i=0;i<3;i++)
-    eeprom_write_byte( &(saveStatus[sceneNum].maxDimmer[i]) ,toSet->maxDimmer[i]);
   uint8_t c = getChecksum(toSet);
   eeprom_write_byte( &(saveStatus[sceneNum].checksum),c );
 }
@@ -541,10 +601,10 @@ void getStatusFromPGM(LAMP_STATUS *toSet)
   toSet->lamps = pgm_read_byte(&(backupStatus.lamps));
   for(uint8_t i=0;i<3;i++)
     toSet->dimmer[i] = pgm_read_byte( &(backupStatus.dimmer[i]) );
-  for(uint8_t i=0;i<3;i++)
+/*  for(uint8_t i=0;i<3;i++)
     toSet->minDimmer[i] = pgm_read_byte( &(backupStatus.minDimmer[i]) );
   for(uint8_t i=0;i<3;i++)
-    toSet->maxDimmer[i] = pgm_read_byte( &(backupStatus.maxDimmer[i]) );
+    toSet->maxDimmer[i] = pgm_read_byte( &(backupStatus.maxDimmer[i]) );*/
   toSet->checksum = pgm_read_byte( &(backupStatus.checksum) );
 }
 

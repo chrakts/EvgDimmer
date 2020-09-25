@@ -38,4 +38,12 @@ extern const  LAMP_STATUS backupStatus PROGMEM ;
 extern LAMP_STATUS saveStatus[];
 
 extern RFM69 *globRFM;
+
+// Zuordnung zwischen logischer Nummer (Lampe und Dimmer) zu Hardware
+extern uint8_t LAMP_MAP[4];
+extern register8_t DIMMER_MAP[3];
+
+extern uint8_t dimmerMin[];
+extern uint8_t dimmerMax[];
+
 #endif /* EXTERNAL_H_ */

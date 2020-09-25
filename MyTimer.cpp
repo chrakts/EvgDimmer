@@ -7,6 +7,8 @@
 
 #include "MyTimer.h"
 #include "External.h"
+#include "ledHardware.h"
+#include "evgDimmer.h"
 
 extern volatile TIMER MyTimers[];
 
@@ -28,7 +30,7 @@ void init_mytimer(void)
 	RTC.INTCTRL	= RTC_OVFINTLVL_MED_gc;
 }
 
-void clear2Send( void )
+void clear2Send( uint8_t num )
 {
   nextSendReady = true;
   nextStatus2Send +=1;
@@ -36,21 +38,27 @@ void clear2Send( void )
     nextStatus2Send=0;
 }
 
-void clear2Update( void )
+void ledToggle( uint8_t num )
+{
+  LEDROT_TOGGLE;
+}
+
+void clear2Update( uint8_t num )
 {
   nextUpdateReady = true;
 }
 
-void no_function( void )
+void stopSpecialTim( uint8_t num )
 {
-	;
+  stopSpecial();
+	//jobState=JOB_NORMAL;
+	//MyTimers[LED_BLINK_TIMER].restart = RESTART_NO;
+	//MyTimers[LED_BLINK_TIMER].state = TM_STOP;
 }
 
 ISR ( RTC_OVF_vect )
 {
 uint8_t i;
-//	LED_KLINGEL_TOGGLE;
-	PORTD_OUTTGL = PIN7_bm;
 	for (i=0;i<MYTIMER_NUM;i++)
 	{
 		switch(MyTimers[i].state )
@@ -84,10 +92,3 @@ uint8_t i;
 		}
 	}
 }
-
-
-void LED_toggle(uint8_t test)
-{
-//	LED_KLINGEL_TOGGLE;
-}
-

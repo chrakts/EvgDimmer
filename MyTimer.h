@@ -14,13 +14,12 @@
 #include <avr/interrupt.h>
 
 
-
-#define MYTIMER_NUM	4
+#define MYTIMER_NUM	5
 
 enum{TM_START,TM_RESET,TM_STOP,TM_RUN};
 enum{RESTART_YES,RESTART_NO};
 
-enum{RFM69_TIMER,SEND_REPEAT,TIMER_TIMEOUT};
+enum{RFM69_TIMER,SEND_REPEAT_TIMER,SEND_UPDATE_TIMER,LED_BLINK_TIMER,STATUS_SPECIAL_TIMER};
 
 struct Timer
 {
@@ -28,16 +27,18 @@ struct Timer
 	uint8_t		restart;
 	uint16_t	value;
 	uint16_t	actual;
-	void  (*OnReady)  (uint8_t test);
+	void  (*OnReady)  (uint8_t num);
 };
 
 typedef struct Timer TIMER;
 
 
-void LED_toggle(uint8_t test);
-void init_mytimer(void);
-void clear2Send(void);
-void clear2Update( void );
+void init_mytimer( void );
 
+// Callback-Funktionen
+void clear2Send( uint8_t num );
+void clear2Update( uint8_t num );
+void ledToggle( uint8_t num );
+void stopSpecialTim( uint8_t num );
 
 #endif /* MYTIMER_H_ */

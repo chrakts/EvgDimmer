@@ -42,6 +42,7 @@
 			<Add directory="/home/chrak/Daten/Software/repositories/Secrets" />
 			<Add directory="/home/chrak/Daten/Software/repositories/rc5-32" />
 			<Add directory="/home/chrak/Daten/Software/repositories/xmegaClocks" />
+			<Add directory="/home/chrak/Daten/Software/repositories/watchdog" />
 		</Compiler>
 		<Linker>
 			<Add option="-mmcu=atxmega32a4u" />
@@ -63,13 +64,14 @@
 		<Unit filename="../communication/CRC_Calc.h" />
 		<Unit filename="../communication/Serial.cpp" />
 		<Unit filename="../communication/Serial.h" />
-		<Unit filename="../communication/UART.h" />
 		<Unit filename="../rc5-32/rc5-32.cpp" />
 		<Unit filename="../rc5-32/rc5-32.h" />
 		<Unit filename="../spi/SPI.cpp" />
 		<Unit filename="../spi/SPI.h" />
 		<Unit filename="../spi/spi_driver.cpp" />
 		<Unit filename="../spi/spi_driver.h" />
+		<Unit filename="../watchdog/watchdog.cpp" />
+		<Unit filename="../watchdog/watchdog.h" />
 		<Unit filename="../xmegaClocks/xmegaClocks.cpp" />
 		<Unit filename="../xmegaClocks/xmegaClocks.h" />
 		<Unit filename="External.h" />

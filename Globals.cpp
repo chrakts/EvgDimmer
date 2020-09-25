@@ -27,10 +27,11 @@ volatile bool    nextUpdateReady=false;
 
 // Timerwert 16 entspricht 100ms
 volatile TIMER MyTimers[MYTIMER_NUM]= {
-  {TM_STOP,RESTART_NO,4,0,NULL},
+  {TM_STOP,RESTART_NO,4,0,NULL},              // RFM-Timer
   {TM_START,RESTART_YES,400,0,clear2Send},    // regelmäßige ereignisunabhängige Aktualisierung
-  {TM_START,RESTART_YES,50,0,clear2Update},  // Aktualisierung, falls Statusänderung
-  {TM_STOP,RESTART_NO,100,0,NULL}		// Timeout-Timer
+  {TM_START,RESTART_YES,50,0,clear2Update},   // Aktualisierung, falls Statusänderung
+  {TM_STOP,RESTART_NO,30,0,ledToggle},		    // LED-Blinken
+  {TM_STOP,RESTART_NO,1000,0,stopSpecialTim }     // Spezialmodus beenden
 };
 
 Serial debug(0);
@@ -39,9 +40,21 @@ Serial debug(0);
 volatile uint8_t IR_Remote,Taste_Neu;
 
 LAMP_STATUS actualStatus,oldStatus,lastUpdateStatus;
-const  LAMP_STATUS backupStatus PROGMEM = {1,{254,254,5},{50,50,50},{254,254,254},146};
-LAMP_STATUS EEMEM saveStatus[10];
+
+const  LAMP_STATUS backupStatus PROGMEM = {1,{254,254,5},146};
+
+uint8_t dimmerMin[3] EEMEM={50,50,50};
+uint8_t dimmerMax[3] EEMEM={254,254,254};
+
+
+LAMP_STATUS saveStatus[10] EEMEM= {  {1,{254,254,5},146},{2,{254,254,5},252},{4,{254,254,5},250},{8,{254,254,5},146},{2,{254,254,5},146},{1,{254,254,5},146},{1,{254,254,5},146},{3,{50,50,5},146},{8,{254,254,5},146},{16,{254,254,5},146}  };
+
+
+
 
 RFM69 *globRFM;
 
-// const unsigned char imageButterfly[IMAGEBUTTERFLY_SIZE] PROGMEM = {};
+// Zuordnung zwischen logischer Nummer (Lampe und Dimmer) zu Hardware
+uint8_t LAMP_MAP[4] = {PIN4_bm,PIN5_bm,PIN6_bm,PIN7_bm};
+register8_t DIMMER_MAP[3] = {(TCC0.CCDL),(TCC0.CCCL),(TCC0.CCBL)};
+

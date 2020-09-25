@@ -1,6 +1,37 @@
 #ifndef EVGDIMMER_H_INCLUDED
 #define EVGDIMMER_H_INCLUDED
 
+
+/* Hardwareinfos */
+/*
+LEDs:
+PORTA PIN2 und PIN3
+
+rc5-32:
+PORTB PIN1, TC1 (NORMAL) mit OVF-Interrupt (LVL=LO)
+
+UART:
+UARTD0 (PORTD mit Pins 0...3)
+RX/TX-Interrupts (LVL=LO)
+Busy-Funktion wird nicht (!) benutzt.
+
+myTimer:
+RTC
+
+SPI:
+SPID (PORTD mit Pins 4...7)
+
+rfm69:
+PORTD / PIN4
+PORTA / PIN1 mit PORTA_INT1_vect (LVL=LO)
+
+Lampen:
+PORTC / PIN 4,5,6,7
+
+Dimmer:
+PORTC / PIN 1,2,3
+
+*/
 #include <ctype.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -14,7 +45,7 @@
 #include "RFM69.h"
 #include "secrets.h"
 #include "ledHardware.h"
-
+#include "watchdog.h"
 #include "External.h"
 
 #define SYSCLK CLK32M
@@ -24,6 +55,18 @@
 #define myID          'R'
 //#define toID          33
 #define NETWORK       '1'
+
+
+
+#define DIMMER_0        CCAL
+#define DIMMER_1        CCBL
+#define DIMMER_2        CCCL
+
+#define LAMP_PORT       PORTC
+
+#define WDT_SHORT		WDT_PER_4KCLK_gc
+#define WDT_LONG		WDT_PER_8KCLK_gc
+
 
 enum{OFF=0,ON,TOGGLE};
 
@@ -44,6 +87,10 @@ void setDimmer(char dimmer,char *status);
 void setDimmer(uint8_t dimmer,uint8_t status);
 void setLamp(char lamp,char *status);
 void setLamp(uint8_t lamp,uint8_t status);
+void updateHardware();
+void initPWM();
+void startSpecial(uint8_t state);
+void stopSpecial(void);
 
 uint8_t getChecksum(LAMP_STATUS *toTest);
 uint8_t proveChecksum(LAMP_STATUS *toTest);
