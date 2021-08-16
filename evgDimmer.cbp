@@ -35,19 +35,19 @@
 			<Add option="-funsigned-bitfields" />
 			<Add option="-DF_CPU=32000000UL" />
 			<Add option="-Datxmega" />
-			<Add directory="/home/chrak/Daten/Software/repositories/EvgDimmer" />
-			<Add directory="/home/chrak/Daten/Software/repositories/RFM69-atxmega" />
-			<Add directory="/home/chrak/Daten/Software/repositories/communication" />
-			<Add directory="/home/chrak/Daten/Software/repositories/spi" />
-			<Add directory="/home/chrak/Daten/Software/repositories/Secrets" />
-			<Add directory="/home/chrak/Daten/Software/repositories/rc5-32" />
-			<Add directory="/home/chrak/Daten/Software/repositories/xmegaClocks" />
-			<Add directory="/home/chrak/Daten/Software/repositories/watchdog" />
+			<Add directory="/home/christof/Daten/Software/repositories/EvgDimmer" />
+			<Add directory="/home/christof/Daten/Software/repositories/RFM69-atxmega" />
+			<Add directory="/home/christof/Daten/Software/repositories/communication" />
+			<Add directory="/home/christof/Daten/Software/repositories/spi" />
+			<Add directory="/home/christof/Daten/Software/repositories/Secrets" />
+			<Add directory="/home/christof/Daten/Software/repositories/rc5-32" />
+			<Add directory="/home/christof/Daten/Software/repositories/xmegaClocks" />
+			<Add directory="/home/christof/Daten/Software/repositories/watchdog" />
 		</Compiler>
 		<Linker>
 			<Add option="-mmcu=atxmega32a4u" />
 			<Add option="-Wl,-Map=$(TARGET_OUTPUT_DIR)$(TARGET_OUTPUT_BASENAME).map,--cref" />
-			<Add directory="/home/chrak/Daten/Software/repositories/EvgDimmer" />
+			<Add directory="/home/christof/Daten/Software/repositories/EvgDimmer" />
 		</Linker>
 		<ExtraCommands>
 			<Add after="avr-objdump -h -S $(TARGET_OUTPUT_FILE) &gt; $(TARGET_OUTPUT_DIR)$(TARGET_OUTPUT_BASENAME).lss" />
