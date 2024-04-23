@@ -83,7 +83,7 @@ int main(void)
     }
     // bei Änderung wird das Update gesendet über Funk
     if(nextUpdateReady)
-    {
+    {LAMP_STATUS
       nextUpdateReady=false;
       updateStatus();
     }
